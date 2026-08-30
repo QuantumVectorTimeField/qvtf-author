@@ -33,6 +33,16 @@ Download the latest release from the [Releases](https://github.com/QuantumVector
 1. Download `QVTF_Author_v1_0_0.zip` (or `.dmg`).
 2. Unzip and drag `QVTF Author.app` into your `/Applications` folder.
 
+> [!IMPORTANT]
+> **Apple notarization:** The current macOS build is ad-hoc signed but is not notarized by Apple because the project does not currently participate in the paid Apple Developer Program. macOS may therefore warn that it cannot verify the developer or check the app for malicious software. Only continue if you downloaded the app from this repository's official Releases page.
+
+If macOS blocks the first launch:
+1. Try to open `QVTF Author.app` once so macOS records the blocked attempt.
+2. Open **System Settings → Privacy & Security**.
+3. Scroll to **Security**, click **Open Anyway**, then confirm **Open**.
+
+This creates an exception for the app on that Mac. See [Apple's guidance for opening an app from an unknown developer](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
+
 ### Requirements
 The app integrates with standard command-line scientific tools if available:
 - **Pandoc** (for document conversion and MathML generation)
