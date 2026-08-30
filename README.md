@@ -30,7 +30,7 @@
 
 ### macOS
 Download the latest release from the [Releases](https://github.com/QuantumVectorTimeField/qvtf-author/releases) page:
-1. Download `QVTF_Author_v1_0_0.zip` (or `.dmg`).
+1. Download `QVTF_Author_v1.0.0_macOS_arm64.zip` for an Apple Silicon Mac.
 2. Unzip and drag `QVTF Author.app` into your `/Applications` folder.
 
 > [!IMPORTANT]
