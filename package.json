@@ -1,0 +1,21 @@
+{
+  "name": "tauri_helper",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@cspell/dict-de-de": "^4.1.2",
+    "@cspell/dict-en-gb": "^5.0.31",
+    "@cspell/dict-es-es": "^3.0.8",
+    "@cspell/dict-fr-fr": "^2.3.2",
+    "@cspell/dict-it-it": "^3.1.6",
+    "@cspell/dict-nl-nl": "^2.4.2",
+    "@cspell/dict-pt-br": "^2.4.2"
+  }
+}

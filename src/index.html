@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QVTF Author — Scientific Markdown & LaTeX Publisher</title>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        processEscapes: true
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      },
+      startup: {
+        typeset: false
+      }
+    };
+  </script>
+  <script src="marked.min.js" defer></script>
+  <script src="tex-svg.js" defer></script>
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <!-- Drag and Drop Overlay -->
+  <div id="drop-overlay" class="drop-overlay">
+    <div class="drop-overlay-box">
+      <span class="drop-icon">📄</span>
+      <h2>Drop Document Here to Open</h2>
+      <p>Supports Markdown (.md) and LaTeX (.tex) files</p>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Top Nav / Control Bar -->
+    <header class="app-header">
+      <div class="logo-area">
+        <span class="logo-icon">𝚽</span>
+        <h1>QVTF Author</h1>
+      </div>
+      <div class="file-ctrls">
+        <span id="lbl-file-path">No document loaded</span>
+        <button id="btn-toggle-preview" class="btn btn-secondary">Split Preview</button>
+        <select id="select-theme" title="Theme Selector" style="font-size: 12px; padding: 6px 10px; margin-right: 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); cursor: pointer;">
+          <option value="dark" selected>🌙 Dark Theme</option>
+          <option value="light">☀️ Light Academic</option>
+          <option value="system">🖥️ System Auto</option>
+        </select>
+        <select id="select-recent-files" style="max-width: 160px; font-size: 12px; padding: 6px 10px; margin-right: 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); cursor: pointer;">
+          <option value="" disabled selected>Open Recent...</option>
+        </select>
+        <button id="btn-new-doc" class="btn btn-secondary" style="margin-right: 8px;">New Document</button>
+        <button id="btn-preambles" class="btn btn-secondary" style="margin-right: 8px;">Preambles</button>
+        <button id="btn-help" class="btn btn-secondary" style="margin-right: 8px;">📖 Help</button>
+        <button id="btn-open-doc" class="btn btn-primary">Open Document</button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="app-workspace">
+      <!-- Left Pane: Editor & Search -->
+      <section class="pane editor-pane">
+        <div class="pane-header">
+          <h2>Document Editor</h2>
+          <div class="editor-actions">
+            <span id="lbl-save-status" style="font-size: 12px; color: var(--success-color); margin-right: 8px; font-style: italic;"></span>
+            <button id="btn-save-doc" class="btn btn-secondary">Save</button>
+            <button id="btn-save-as-doc" class="btn btn-secondary">Save As...</button>
+            <label class="toggle-switch">
+              <input type="checkbox" id="chk-line-nums" checked>
+              <span class="slider"></span>
+              Show Line Numbers
+            </label>
+          </div>
+        </div>
+        
+        <!-- Search/Find utility bar -->
+        <div class="search-bar" id="search-bar">
+          <input type="text" id="txt-find" placeholder="Find...">
+          <button id="btn-find-next" class="btn btn-icon">Find Next</button>
+          <button id="btn-find-prev" class="btn btn-icon">Find Prev</button>
+          <input type="text" id="txt-replace" placeholder="Replace with...">
+          <button id="btn-replace" class="btn btn-icon">Replace</button>
+          <button id="btn-replace-all" class="btn btn-icon">Replace All</button>
+          <span id="lbl-find-status"></span>
+        </div>
+
+        <div class="editor-container">
+          <div class="line-numbers" id="line-numbers">1</div>
+          <textarea id="txt-editor" placeholder="Write your Markdown or LaTeX content here..." spellcheck="false"></textarea>
+        </div>
+      </section>
+
+      <!-- Resizer between Editor and Preview -->
+      <div class="resizer" id="resizer-editor-preview" title="Drag to resize Editor and Preview panes" style="display: none;"></div>
+
+      <!-- Center-Right Pane: Live Document Preview -->
+      <section class="pane preview-pane" id="preview-pane">
+        <div class="pane-header">
+          <h2>Document Preview</h2>
+        </div>
+        <div class="preview-content" id="preview-content">
+          <div class="preview-placeholder">Open a Markdown or LaTeX document to preview.</div>
+        </div>
+      </section>
+
+      <!-- Resizer between Preview and Sidebar -->
+      <div class="resizer" id="resizer-preview-sidebar" title="Drag to resize Sidebar"></div>
+
+      <!-- Right Pane: Tabs Sidebar -->
+      <aside class="pane sidebar-pane">
+        <div class="tab-header">
+          <button id="tab-btn-spell" class="tab-btn active">Spell Checker</button>
+          <button id="tab-btn-errors" class="tab-btn">Compiler Errors</button>
+          <button id="tab-btn-publish" class="tab-btn">Publisher</button>
+        </div>
+
+        <div id="tab-content-spell" class="tab-content active">
+          <div class="settings-group card" style="margin-bottom: 12px; padding: 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);">
+            <h3 style="margin-top: 0; margin-bottom: 8px; font-size: 13px; color: var(--text-primary);">Spellcheck Settings</h3>
+            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label for="select-spell-lang" style="color: var(--text-secondary);">Spelling Language:</label>
+                <select id="select-spell-lang" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; outline: none; width: 140px;">
+                  <option value="en-GB" selected>English (UK)</option>
+                  <option value="en-US">English (US)</option>
+                  <option value="en-CA">English (Canada)</option>
+                  <option value="en-AU">English (Australia)</option>
+                  <option value="fr-FR">French (Français)</option>
+                  <option value="de-DE">German (Deutsch)</option>
+                  <option value="es-ES">Spanish (Español)</option>
+                  <option value="it-IT">Italian (Italiano)</option>
+                  <option value="pt-PT">Portuguese (Português)</option>
+                  <option value="nl-NL">Dutch (Nederlands)</option>
+                </select>
+              </div>
+              <div id="div-force-ise" style="display: flex; justify-content: space-between; align-items: center;">
+                <label for="chk-force-ise" style="color: var(--text-secondary); cursor: pointer;">Force -ise endings:</label>
+                <input type="checkbox" id="chk-force-ise" checked style="cursor: pointer;">
+              </div>
+            </div>
+          </div>
+
+          <div class="actions-row">
+            <button id="btn-scan-spell" class="btn btn-accent btn-full">Scan Spelling</button>
+          </div>
+          
+          <div class="errors-list-container">
+            <table class="data-table" id="table-errors">
+              <thead>
+                <tr>
+                  <th>Word</th>
+                  <th>Line</th>
+                  <th>Context Preview</th>
+                </tr>
+              </thead>
+              <tbody id="errors-tbody">
+                <tr>
+                  <td colspan="3" class="placeholder-text">Click 'Scan Spelling' to check spelling errors</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Suggestions / Resolution Box -->
+          <div class="resolver-panel card" id="resolver-panel">
+            <h3>Correction Options</h3>
+            <div class="resolver-form">
+              <label>Original Word:</label>
+              <input type="text" id="txt-orig-word" readonly>
+              
+              <label>Replace with:</label>
+              <input type="text" id="txt-replace-val" placeholder="Type or select correction">
+              
+              <div class="suggestions-container">
+                <label>Suggestions:</label>
+                <div class="suggestions-list" id="list-suggestions">
+                  <!-- JS will load suggestion buttons here -->
+                </div>
+              </div>
+
+              <div class="resolver-actions">
+                <button id="btn-spell-replace" class="btn btn-primary" disabled>Replace</button>
+                <button id="btn-spell-replace-all" class="btn btn-secondary" disabled>Replace All</button>
+                <button id="btn-spell-ignore" class="btn btn-secondary" disabled>Ignore</button>
+                <button id="btn-spell-add" class="btn btn-secondary" disabled>Add Word</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-content-errors" class="tab-content">
+          <div class="errors-list-container">
+            <table class="data-table" id="table-compile-errors">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">Line</th>
+                  <th>Compiler Error Message</th>
+                </tr>
+              </thead>
+              <tbody id="compile-errors-tbody">
+                <tr>
+                  <td colspan="2" class="placeholder-text">No compilation errors detected.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Suggested Resolution Box -->
+          <div class="resolver-panel card" id="compile-resolver-panel" style="margin-top: 15px; display: none;">
+            <h3>Error Details & Suggestion</h3>
+            <div class="resolver-form">
+              <label>Error Message:</label>
+              <div id="lbl-compile-err-msg" style="font-size: 12px; line-height: 1.4; color: var(--text-primary); margin-bottom: 10px; padding: 6px; background: rgba(255,255,255,0.03); border-radius: 4px; font-family: monospace; white-space: pre-wrap; word-break: break-all;"></div>
+              
+              <label>Suggested Correction:</label>
+              <div id="lbl-compile-suggestion" style="font-size: 12px; line-height: 1.4; color: var(--accent-color); margin-bottom: 15px; font-weight: 500;"></div>
+              
+              <div class="resolver-actions">
+                <button id="btn-apply-compile-fix" class="btn btn-primary btn-full">Apply Suggested Fix</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-content-publish" class="tab-content">
+          <div class="settings-group card" id="dependency-health-card" style="margin-bottom: 15px; border: 1px solid rgba(255, 255, 255, 0.08); padding: 12px; border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 style="margin: 0; font-size: 14px; color: var(--text-primary);">System Dependencies</h3>
+              <button id="btn-check-deps" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; border-radius: 4px;">Run Check</button>
+            </div>
+            <div id="dependency-status-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; color: var(--text-secondary);">
+              <div>Pandoc: <span id="dep-pandoc" style="font-weight: 600;">-</span></div>
+              <div>CSpell: <span id="dep-cspell" style="font-weight: 600;">-</span></div>
+              <div>Node.js/npm: <span id="dep-node" style="font-weight: 600;">-</span></div>
+              <div>LuaLaTeX: <span id="dep-lualatex" style="font-weight: 600;">-</span></div>
+              <div>XeLaTeX: <span id="dep-xelatex" style="font-weight: 600;">-</span></div>
+              <div>PDFLaTeX: <span id="dep-pdflatex" style="font-weight: 600;">-</span></div>
+            </div>
+          </div>
+
+          <div class="settings-group card">
+            <h3>Workflow Preset</h3>
+            <select id="select-preset">
+              <option value="Custom">Custom</option>
+              <option value="Formal PDF (Print/arXiv)">Formal PDF (Print/arXiv)</option>
+              <option value="Substack HTML (Dark Mode)">Substack HTML (Dark Mode)</option>
+              <option value="Medium HTML (Light Mode)">Medium HTML (Light Mode)</option>
+              <option value="LaTeX Source (.tex)">LaTeX Source (.tex)</option>
+            </select>
+          </div>
+
+          <div class="settings-grid card">
+            <h3>Compiler Settings</h3>
+            
+            <div class="setting-item">
+              <label for="select-engine">PDF Engine:</label>
+              <select id="select-engine">
+                <option value="lualatex">lualatex</option>
+                <option value="xelatex">xelatex</option>
+                <option value="pdflatex">pdflatex</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <label for="select-math-style">HTML Math Style:</label>
+              <select id="select-math-style">
+                <option value="MathML (HTML5 Vector Math)" selected>HTML5 MathML (Vector, Native, Works Everywhere)</option>
+                <option value="MathJax JS (Substack / Medium)">MathJax JS (Substack / Medium)</option>
+                <option value="SVG (CodeCogs WebTeX)">SVG (CodeCogs WebTeX)</option>
+                <option value="PNG (CodeCogs WebTeX)">PNG (CodeCogs WebTeX)</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <label for="select-math-fg">HTML Math Color:</label>
+              <select id="select-math-fg">
+                <option value="Black (Light Mode)">Black (Light Mode)</option>
+                <option value="White (Dark Mode)">White (Dark Mode)</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <label for="select-math-bg">HTML Math BG:</label>
+              <select id="select-math-bg">
+                <option value="Transparent">Transparent</option>
+                <option value="White">White</option>
+                <option value="Black">Black</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <label for="select-math-size">HTML Math Size:</label>
+              <select id="select-math-size">
+                <option value="80 (Tiny)">80 (Tiny)</option>
+                <option value="100 (Small)">100 (Small)</option>
+                <option value="110 (Medium-Small)">110 (Medium-Small)</option>
+                <option value="120 (Standard)">120 (Standard)</option>
+                <option value="150 (Medium-Large)">150 (Medium-Large)</option>
+                <option value="160 (Large)">160 (Large)</option>
+                <option value="180 (Very Large)">180 (Very Large)</option>
+                <option value="200 (Huge)">200 (Huge)</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <label for="select-pdf-page-size">PDF Page Size:</label>
+              <select id="select-pdf-page-size">
+                <option value="A4" selected>A4</option>
+                <option value="Letter">Letter</option>
+                <option value="Legal">Legal</option>
+                <option value="A5">A5</option>
+                <option value="A3">A3</option>
+                <option value="6x9">6" x 9" (Amazon KDP)</option>
+                <option value="5.5x8.5">5.5" x 8.5" (Amazon KDP)</option>
+                <option value="5x8">5" x 8" (Amazon KDP)</option>
+                <option value="7x10">7" x 10" (Amazon KDP)</option>
+                <option value="8x10">8" x 10" (Amazon KDP)</option>
+                <option value="custom">Custom Dimensions...</option>
+              </select>
+            </div>
+
+            <div class="setting-item" id="div-pdf-custom-size" style="display: none;">
+              <label>Custom Size (Width / Height):</label>
+              <div class="input-browse">
+                <input type="text" id="txt-pdf-custom-w" placeholder="Width (e.g. 6in)" style="background-color: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 12px; padding: 6px; border-radius: 4px; outline: none; width: 50%;">
+                <input type="text" id="txt-pdf-custom-h" placeholder="Height (e.g. 9in)" style="background-color: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 12px; padding: 6px; border-radius: 4px; outline: none; width: 50%;">
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <label for="select-pdf-margin">PDF Margin:</label>
+              <select id="select-pdf-margin">
+                <option value="1in" selected>1 inch</option>
+                <option value="0.75in">0.75 inch</option>
+                <option value="0.5in">0.5 inch</option>
+                <option value="0.25in">0.25 inch</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <label for="select-html-table-width">HTML Table Width:</label>
+              <select id="select-html-table-width">
+                <option value="100%" selected>100% Width</option>
+                <option value="auto">Auto (Content Width)</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <label for="select-html-table-style">HTML Table Style:</label>
+              <select id="select-html-table-style">
+                <option value="booktabs" selected>Booktabs (Classic)</option>
+                <option value="grid">Grid (Bordered)</option>
+                <option value="striped">Striped (Zebra)</option>
+                <option value="minimal">Minimalist</option>
+              </select>
+            </div>
+
+            <div class="setting-item full-width">
+              <label for="txt-bib">Bibliography (.bib):</label>
+              <div class="input-browse">
+                <input type="text" id="txt-bib" placeholder="No bibliography file" readonly>
+                <button id="btn-browse-bib" class="btn btn-secondary" disabled>Browse</button>
+              </div>
+            </div>
+
+            <div class="setting-item full-width">
+              <label for="txt-csl">CSL Style File (.csl):</label>
+              <div class="input-browse">
+                <input type="text" id="txt-csl" placeholder="No CSL style file" readonly>
+                <button id="btn-browse-csl" class="btn btn-secondary" disabled>Browse</button>
+              </div>
+            </div>
+            
+            <div class="toggles-grid">
+              <label class="toggle-label"><input type="checkbox" id="chk-citeproc" checked> Run Citeproc</label>
+              <label class="toggle-label"><input type="checkbox" id="chk-toc" checked> Table of Contents</label>
+              <label class="toggle-label"><input type="checkbox" id="chk-num" checked> Number Sections</label>
+              <label class="toggle-label"><input type="checkbox" id="chk-left-align"> Left Align Body</label>
+              <label class="toggle-label"><input type="checkbox" id="chk-unicode-math" checked> Unicode Math Font</label>
+              <label class="toggle-label"><input type="checkbox" id="chk-convert-inline" checked> Unicode Inline Math</label>
+              <label class="toggle-label"><input type="checkbox" id="chk-autocopy" checked> Auto Copy Clipboard</label>
+            </div>
+          </div>
+
+          <!-- Compilation Workflows -->
+          <div class="workflows-panel card">
+            <h3>Publishing Workflows</h3>
+            
+            <div class="workflow-group">
+              <h4>PDF Publication Workflow</h4>
+              <div class="workflow-actions">
+                <button id="btn-build-pdf" class="btn btn-primary" disabled>Build PDF</button>
+                <button id="btn-open-pdf" class="btn btn-secondary" disabled>Open PDF</button>
+              </div>
+              <div id="lbl-pdf-status" style="font-size: 11px; margin-top: 5px; font-style: italic;"></div>
+            </div>
+
+            <div class="workflow-group">
+              <h4>Popular Web Publication Workflow (Substack/Medium)</h4>
+              <div class="workflow-actions">
+                <button id="btn-build-html" class="btn btn-primary" disabled>Export to HTML</button>
+                <button id="btn-open-html" class="btn btn-secondary" disabled>Open HTML</button>
+              </div>
+              <div id="lbl-html-status" style="font-size: 11px; margin-top: 5px; font-style: italic;"></div>
+            </div>
+
+            <div class="workflow-group">
+              <h4>LaTeX Source Code Workflow</h4>
+              <div class="workflow-actions">
+                <button id="btn-build-tex" class="btn btn-primary" disabled>Export to LaTeX (.tex)</button>
+                <button id="btn-open-tex" class="btn btn-secondary" disabled>Open LaTeX File</button>
+              </div>
+              <div id="lbl-tex-status" style="font-size: 11px; margin-top: 5px; font-style: italic;"></div>
+            </div>
+
+            <div class="workflow-group">
+              <h4>Word Document Workflow</h4>
+              <div class="workflow-actions">
+                <button id="btn-build-docx" class="btn btn-primary" disabled>Export to Word (.docx)</button>
+                <button id="btn-open-docx" class="btn btn-secondary" disabled>Open DOCX</button>
+              </div>
+              <div id="lbl-docx-status" style="font-size: 11px; margin-top: 5px; font-style: italic;"></div>
+            </div>
+          </div>
+
+          <!-- Console log output -->
+          <div class="console-panel card">
+            <h3>Compilation Log</h3>
+            <pre id="txt-log" class="console-log">Ready.</pre>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <dialog id="preamble-dialog" class="preamble-dialog">
+    <form method="dialog" class="preamble-window">
+      <div class="preamble-heading">
+        <div>
+          <h2>Saved Preambles</h2>
+          <p>Keep reusable LaTeX, Markdown, or code sections and insert them into documents.</p>
+        </div>
+        <button value="cancel" class="btn btn-secondary" aria-label="Close preamble library">Close</button>
+      </div>
+      <div class="preamble-layout">
+        <div class="preamble-list-column">
+          <div id="preamble-list" class="preamble-list"></div>
+          <button type="button" id="btn-new-preamble" class="btn btn-secondary btn-full">New preamble</button>
+        </div>
+        <div class="preamble-editor-column">
+          <label for="preamble-name">Name</label>
+          <input id="preamble-name" type="text" placeholder="e.g. LuaLaTeX article">
+          <label for="preamble-content">Content</label>
+          <textarea id="preamble-content" spellcheck="false" placeholder="Paste your working preamble or reusable code here..."></textarea>
+          <label class="preamble-default-option">
+            <input type="checkbox" id="preamble-default">
+            Insert this preamble automatically in new documents
+          </label>
+          <div class="preamble-actions">
+            <button type="button" id="btn-delete-preamble" class="btn btn-secondary">Delete</button>
+            <span class="preamble-action-spacer"></span>
+            <button type="button" id="btn-insert-preamble" class="btn btn-secondary">Insert now</button>
+            <button type="button" id="btn-save-preamble" class="btn btn-primary">Save preamble</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Help & User Guide Dialog -->
+  <dialog id="help-dialog" class="help-dialog preamble-dialog">
+    <form method="dialog" class="preamble-window">
+      <div class="preamble-heading">
+        <div>
+          <h2>📖 User Guide & Reference Manual</h2>
+          <p>LaTeX & Markdown Helper & Publisher documentation, features, and keyboard shortcuts.</p>
+        </div>
+        <button value="cancel" class="btn btn-secondary" aria-label="Close user guide">Close</button>
+      </div>
+      <div class="help-layout">
+        <div class="help-nav-column">
+          <input type="text" id="txt-help-search" placeholder="Search guide..." style="width: 100%; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); padding: 8px 10px; font-size: 12px; margin-bottom: 8px; outline: none;">
+          <div class="help-nav-list">
+            <button type="button" class="help-nav-btn active" data-target="help-quickstart">🚀 Quick Start</button>
+            <button type="button" class="help-nav-btn" data-target="help-editor">📝 Editor & Navigation</button>
+            <button type="button" class="help-nav-btn" data-target="help-preview">👁️ Split Preview</button>
+            <button type="button" class="help-nav-btn" data-target="help-spell">🔍 Multi-Lang Spellcheck</button>
+            <button type="button" class="help-nav-btn" data-target="help-errors">⚠️ Compiler Diagnostics</button>
+            <button type="button" class="help-nav-btn" data-target="help-publish">📤 Publishing & Exports</button>
+            <button type="button" class="help-nav-btn" data-target="help-preambles">📜 Preambles Manager</button>
+            <button type="button" class="help-nav-btn" data-target="help-shortcuts">⌨️ Keyboard Shortcuts</button>
+            <button type="button" class="help-nav-btn" data-target="help-about">ℹ️ About QVTF Author</button>
+          </div>
+        </div>
+        <div class="help-content-column" id="help-content-pane">
+          <section id="help-quickstart" class="help-section active">
+            <h3>🚀 Quick Start</h3>
+            <p><strong>Opening Files:</strong> Click <em>Open Document</em> in the top header, choose from <em>Open Recent</em>, or simply <strong>drag & drop</strong> any <code>.tex</code> or <code>.md</code> file from Finder into the window.</p>
+            <p><strong>Creating Documents:</strong> Click <em>New Document</em> (<code>Cmd+N</code>) to start with a clean template.</p>
+            <p><strong>Theme Switcher:</strong> Toggle between <strong>Dark Theme</strong>, <strong>Light Academic</strong>, and <strong>System Auto</strong> in the top bar.</p>
+            <p><strong>Draggable Splitters:</strong> Hover over dividers between panes to drag and resize the Editor, Live Preview, and Sidebar widths.</p>
+          </section>
+
+          <section id="help-editor" class="help-section">
+            <h3>📝 Document Editor & Navigation</h3>
+            <p><strong>Line Numbers:</strong> Enable or disable line numbering via the <em>Show Line Numbers</em> toggle.</p>
+            <p><strong>Find & Replace:</strong> Press <code>Cmd+F</code> / <code>Ctrl+F</code> to open the search bar. Supports forward/backward navigation and single/batch replace.</p>
+            <p><strong>Right-Click Menu:</strong> Right-click inside the editor for Cut, Copy, Paste, Select All, and Scan Spelling shortcuts.</p>
+          </section>
+
+          <section id="help-preview" class="help-section">
+            <h3>👁️ Live Split-Screen Document Preview</h3>
+            <p>Click <strong>Split Preview</strong> to toggle real-time rendering beside your editor.</p>
+            <p><strong>Live Auto-Update:</strong> Edits update automatically as you type with smooth scroll-sync and zero screen flickering.</p>
+            <p><strong>LaTeX Mathematics:</strong> Equations, matrices, theorem environments, and inline math (<code>$...$</code>, <code>\[...\]</code>, <code>align</code>, <code>gather</code>) are typeset in sharp vector MathML / MathJax.</p>
+          </section>
+
+          <section id="help-spell" class="help-section">
+            <h3>🔍 Multi-Language Spell Checker</h3>
+            <p>The spellchecker scans your text while intelligently ignoring LaTeX commands, citations, and math environments.</p>
+            <p><strong>10 Languages:</strong> Select from UK English, US English, Canadian English, Australian English, French, German, Spanish, Italian, Portuguese, and Dutch.</p>
+            <p><strong>Force -ise:</strong> Automatically detects and flags American <code>-ize</code> spelling when UK English is active.</p>
+            <p><strong>Resolutions:</strong> Click any error to jump to its location, pick localized suggestions, replace all occurrences, ignore, or add to your custom dictionary.</p>
+          </section>
+
+          <section id="help-errors" class="help-section">
+            <h3>⚠️ Compiler Diagnostics & Error Resolver</h3>
+            <p>When compiling LaTeX, compiler messages are parsed and mapped back to the original source line.</p>
+            <p><strong>Smart Fixes:</strong> Detects common issues (missing items in lists, text-mode math, unescaped characters, missing packages) and offers 1-click <em>Apply Suggested Fix</em>.</p>
+          </section>
+
+          <section id="help-publish" class="help-section">
+            <h3>📤 Publishing & Export Workflows</h3>
+            <p><strong>PDF Export:</strong> Supports LuaLaTeX, XeLaTeX, and PDFLaTeX with custom bibliography (<code>.bib</code>), CSL citation styles, margins, and equation numbering (global, chapter, section).</p>
+            <p><strong>HTML5 Export:</strong> Generates standalone, responsive HTML5 pages with native offline vector MathML or Substack/Medium MathJax JS.</p>
+            <p><strong>LaTeX Source (.tex):</strong> Converts Markdown to pure standalone LaTeX ready for journal submission.</p>
+            <p><strong>1-Click Presets:</strong> Quickly apply presets for <em>Formal PDF (Print/arXiv)</em>, <em>Substack HTML</em>, <em>Medium HTML</em>, and <em>LaTeX Source</em>.</p>
+          </section>
+
+          <section id="help-preambles" class="help-section">
+            <h3>📜 Preambles Manager</h3>
+            <p>Click <strong>Preambles</strong> to save, manage, and insert reusable LaTeX package headers, macros, theorems, and styling presets into your documents.</p>
+          </section>
+
+          <section id="help-shortcuts" class="help-section">
+            <h3>⌨️ Keyboard Shortcuts</h3>
+            <table class="data-table" style="margin-top: 10px;">
+              <thead>
+                <tr>
+                  <th>Shortcut</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>Cmd+S</code> / <code>Ctrl+S</code></td><td>Save Document</td></tr>
+                <tr><td><code>Cmd+Shift+S</code> / <code>Ctrl+Shift+S</code></td><td>Save Document As...</td></tr>
+                <tr><td><code>Cmd+O</code> / <code>Ctrl+O</code></td><td>Open Document</td></tr>
+                <tr><td><code>Cmd+N</code> / <code>Ctrl+N</code></td><td>New Document</td></tr>
+                <tr><td><code>Cmd+F</code> / <code>Ctrl+F</code></td><td>Find & Replace in Editor</td></tr>
+                <tr><td><code>Esc</code></td><td>Close Dialogs & Context Menus</td></tr>
+                <tr><td><code>Right-Click</code></td><td>Editor Context Menu</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="help-about" class="help-section">
+            <h3>ℹ️ About QVTF Author</h3>
+            <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 15px;">
+              <h4 style="font-size: 15px; color: var(--accent-color); margin-bottom: 6px;">QVTF Author (v1.0.0)</h4>
+              <p style="margin-bottom: 8px; color: var(--text-primary);">Scientific Markdown & LaTeX Publisher</p>
+              <p style="margin-bottom: 4px;"><strong>Author & Creator:</strong> Simeon Peter Marriott</p>
+              <p style="margin-bottom: 4px;"><strong>Umbrella Organization:</strong> <a href="https://qvtf.org" target="_blank" style="color: var(--accent-color); text-decoration: underline;">QVTF.org</a></p>
+              <p style="margin-bottom: 4px;"><strong>Website:</strong> <a href="https://qvtf.org" target="_blank" style="color: var(--accent-color); text-decoration: underline;">https://qvtf.org</a></p>
+              <p style="margin-bottom: 0;"><strong>License:</strong> MIT Open Source License</p>
+            </div>
+            <p><strong>QVTF Author</strong> is part of the <strong>QVTF (Quantum Vector Time Field)</strong> scientific software ecosystem created by <strong>Simeon Peter Marriott</strong>, bridging scientific writing, precision vector graphics (<strong>QVTF Studio</strong>), and reproducible 3D publishing.</p>
+            <p style="color: var(--text-secondary); font-size: 12px; margin-top: 12px;">Copyright &copy; 2026 Simeon Peter Marriott &bull; <a href="https://qvtf.org" target="_blank" style="color: var(--accent-color);">QVTF.org</a>. All rights reserved.</p>
+          </section>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Editor Context Menu -->
+  <div id="editor-context-menu" class="context-menu">
+    <div class="context-menu-item" id="ctx-cut">✂️ Cut <span class="shortcut">Cmd+X</span></div>
+    <div class="context-menu-item" id="ctx-copy">📋 Copy <span class="shortcut">Cmd+C</span></div>
+    <div class="context-menu-item" id="ctx-paste">📥 Paste <span class="shortcut">Cmd+V</span></div>
+    <div class="context-menu-divider"></div>
+    <div class="context-menu-item" id="ctx-select-all">🔍 Select All <span class="shortcut">Cmd+A</span></div>
+    <div class="context-menu-divider"></div>
+    <div class="context-menu-item" id="ctx-spellcheck">🔍 Scan Spelling</div>
+  </div>
+</body>
+</html>
