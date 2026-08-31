@@ -1,9 +1,11 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::io::Write;
 use serde::{Serialize, Deserialize};
 use regex::Regex;
+use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
 
 #[derive(Serialize, Deserialize)]
 struct SpellError {
@@ -299,17 +301,91 @@ fn parse_compiler_errors(output: &str, source: &str, remap_generated_lines: bool
 }
 
 fn get_env_path() -> String {
-    let current_path = std::env::var("PATH").unwrap_or_default();
-    // Always place /Library/TeX/texbin (MacTeX) at the very front of PATH so native MacTeX binaries
-    // (latexpand, pdflatex, etc.) are prioritized over stale/broken MiKTeX symlinks in /usr/local/bin.
-    let prioritized_paths = vec!["/Library/TeX/texbin", "/opt/homebrew/bin", "/usr/local/bin"];
-    let existing_parts: Vec<&str> = current_path
-        .split(':')
-        .filter(|p| !p.is_empty() && !prioritized_paths.contains(p))
-        .collect();
-    let mut all_paths = prioritized_paths;
-    all_paths.extend(existing_parts);
-    all_paths.join(":")
+    let mut paths: Vec<PathBuf> = platform_tool_paths();
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
+    paths.retain(|path| !path.as_os_str().is_empty());
+    paths.dedup();
+    std::env::join_paths(paths)
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn platform_tool_paths() -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        return ["/Library/TeX/texbin", "/opt/homebrew/bin", "/usr/local/bin"]
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let mut paths: Vec<PathBuf> = ["/usr/local/bin", "/usr/bin", "/usr/local/texlive/current/bin/x86_64-linux"]
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        paths.push(user_home_dir().join(".local").join("bin"));
+        paths.push(user_home_dir().join(".npm-global").join("bin"));
+        return paths;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut paths = Vec::new();
+        if let Some(program_files) = std::env::var_os("ProgramFiles") {
+            let root = PathBuf::from(program_files);
+            paths.push(root.join("Pandoc"));
+            paths.push(root.join("MiKTeX").join("miktex").join("bin").join("x64"));
+        }
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            let root = PathBuf::from(local_app_data);
+            paths.push(root.join("Pandoc"));
+            paths.push(root.join("Programs").join("MiKTeX").join("miktex").join("bin").join("x64"));
+        }
+        if let Some(app_data) = std::env::var_os("APPDATA") {
+            paths.push(PathBuf::from(app_data).join("npm"));
+        }
+        return paths;
+    }
+
+    #[allow(unreachable_code)]
+    Vec::new()
+}
+
+fn user_home_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+fn command_candidates(path_dir: &Path, cmd: &str) -> Vec<PathBuf> {
+    let candidates = vec![path_dir.join(cmd)];
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates = candidates;
+        if Path::new(cmd).extension().is_none() {
+            candidates.extend(
+                ["exe", "cmd", "bat"]
+                    .map(|ext| path_dir.join(format!("{}.{}", cmd, ext))),
+            );
+        }
+        return candidates;
+    }
+    #[allow(unreachable_code)]
+    candidates
+}
+
+fn find_command(cmd: &str) -> Option<PathBuf> {
+    std::env::split_paths(&get_env_path())
+        .flat_map(|path_dir| command_candidates(&path_dir, cmd))
+        .find(|candidate| candidate.is_file())
+}
+
+fn tool_command(cmd: &str) -> PathBuf {
+    find_command(cmd).unwrap_or_else(|| PathBuf::from(cmd))
 }
 
 fn latex_to_unicode_html(latex: &str) -> Option<String> {
@@ -460,6 +536,7 @@ fn post_process_inline_math(file_path: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn copy_to_clipboard(plain: &str, html: &str) -> Result<(), String> {
     let script = format!(
         r#"use framework "Foundation"
@@ -493,6 +570,14 @@ pb's setString:"{}" forType:(current application's NSPasteboardTypeHTML)
     } else {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn copy_to_clipboard(plain: &str, html: &str) -> Result<(), String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard
+        .set_html(html.to_string(), Some(plain.to_string()))
+        .map_err(|e| e.to_string())
 }
 
 // TAURI COMMANDS
@@ -538,7 +623,7 @@ fn write_file(path: String, content: String) -> Result<(), String> {
     fs::write(path, content).map_err(|e| e.to_string())
 }
 
-fn get_dictionary_import(lang: &str) -> Option<String> {
+fn get_dictionary_import(app: &tauri::AppHandle, lang: &str) -> Option<String> {
     let lower_lang = lang.to_lowercase();
     let dict_pkg = if lower_lang.starts_with("fr") {
         "dict-fr-fr"
@@ -572,15 +657,11 @@ fn get_dictionary_import(lang: &str) -> Option<String> {
         }
     }
 
-    // 2. Executable parent / Resources directory (for compiled Mac app bundle)
-    if let Ok(exec_path) = std::env::current_exe() {
-        if let Some(mac_os_dir) = exec_path.parent() {
-            if let Some(contents_dir) = mac_os_dir.parent() {
-                let res_path = contents_dir.join("Resources").join(&rel_path);
-                if res_path.exists() {
-                    return Some(res_path.to_string_lossy().to_string());
-                }
-            }
+    // 2. Tauri's platform-specific resource directory in an installed bundle.
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let resource_path = resource_dir.join(&rel_path);
+        if resource_path.exists() {
+            return Some(resource_path.to_string_lossy().to_string());
         }
     }
 
@@ -589,6 +670,7 @@ fn get_dictionary_import(lang: &str) -> Option<String> {
 
 #[tauri::command]
 fn run_spell_check(
+    app: tauri::AppHandle,
     content: String,
     file_type: String,
     doc_path: Option<String>,
@@ -606,8 +688,7 @@ fn run_spell_check(
     let mut custom_words = Vec::new();
     
     // Load global custom words
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let global_config_path = Path::new(&home).join(".cspell_global.json");
+    let global_config_path = user_home_dir().join(".cspell_global.json");
     if global_config_path.exists() {
         if let Ok(data) = fs::read_to_string(&global_config_path) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
@@ -724,7 +805,7 @@ fn run_spell_check(
     config_map.insert("language".to_string(), serde_json::json!(lang));
     config_map.insert("locale".to_string(), serde_json::json!(lang));
 
-    if let Some(import_file) = get_dictionary_import(&lang) {
+    if let Some(import_file) = get_dictionary_import(&app, &lang) {
         config_map.insert("import".to_string(), serde_json::json!([import_file]));
         
         let dict_name = if lower_lang.starts_with("fr") {
@@ -758,7 +839,7 @@ fn run_spell_check(
     let config_content = serde_json::to_string_pretty(&config_json).map_err(|e| e.to_string())?;
     fs::write(&config_path, config_content).map_err(|e| e.to_string())?;
 
-    let mut child = Command::new("cspell")
+    let mut child = Command::new(tool_command("cspell"))
         .env("PATH", &path_env)
         .args(&[
             "--config", &config_path.to_string_lossy(),
@@ -904,14 +985,14 @@ fn is_forbidden(word: &str) -> bool {
 }
 
 #[tauri::command]
-fn fetch_suggestions(word: String, language: Option<String>) -> Result<Vec<String>, String> {
+fn fetch_suggestions(app: tauri::AppHandle, word: String, language: Option<String>) -> Result<Vec<String>, String> {
     let path_env = get_env_path();
     let lang = language.unwrap_or_else(|| "en-GB".to_string()).to_lowercase();
     let temp_config = std::env::temp_dir().join("cspell_temp_config.json");
     
     let mut args = vec!["suggest".to_string(), "--locale".to_string(), lang.clone()];
     
-    if let Some(import_file) = get_dictionary_import(&lang) {
+    if let Some(import_file) = get_dictionary_import(&app, &lang) {
         args.push("--config".to_string());
         args.push(import_file);
     } else if temp_config.exists() {
@@ -923,7 +1004,7 @@ fn fetch_suggestions(word: String, language: Option<String>) -> Result<Vec<Strin
     args.push("15".to_string());
     args.push(word.clone());
 
-    let output = Command::new("cspell")
+    let output = Command::new(tool_command("cspell"))
         .env("PATH", &path_env)
         .args(&args)
         .output();
@@ -987,8 +1068,7 @@ fn add_word_to_json_file(config_path: &Path, word: &str) -> Result<(), String> {
 
 #[tauri::command]
 fn add_to_dictionary(path: Option<String>, word: String) -> Result<(), String> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let global_config_path = Path::new(&home).join(".cspell_global.json");
+    let global_config_path = user_home_dir().join(".cspell_global.json");
     add_word_to_json_file(&global_config_path, &word)?;
     
     if let Some(ref p) = path {
@@ -1006,7 +1086,7 @@ fn add_to_dictionary(path: Option<String>, word: String) -> Result<(), String> {
 #[tauri::command]
 fn render_latex_preview(content: String, path: Option<String>) -> Result<String, String> {
     let path_env = get_env_path();
-    let mut command = Command::new("pandoc");
+    let mut command = Command::new(tool_command("pandoc"));
     command
         .env("PATH", &path_env)
         .args(["--from=latex", "--to=html5", "--mathml"])
@@ -1072,7 +1152,7 @@ fn compile_pdf(
         let file_name = file_path.file_name().unwrap().to_str().unwrap();
         logs.push_str(&format!("Command: {} -interaction=nonstopmode -file-line-error {}\n\n", engine, file_name));
         
-        let output = Command::new(&engine)
+        let output = Command::new(tool_command(&engine))
             .env("PATH", &path_env)
             .current_dir(cwd)
             .args(&["-interaction=nonstopmode", "-file-line-error", file_name])
@@ -1247,7 +1327,7 @@ fn compile_pdf(
         
         logs.push_str(&format!("Command: pandoc {}\n\n", args.join(" ")));
         
-        let output = Command::new("pandoc")
+        let output = Command::new(tool_command("pandoc"))
             .env("PATH", &path_env)
             .args(&args)
             .output()
@@ -1515,7 +1595,7 @@ fn export_html(
     
     logs.push_str(&format!("Command: pandoc {}\n\n", args.join(" ")));
     
-    let output = Command::new("pandoc")
+    let output = Command::new(tool_command("pandoc"))
         .env("PATH", &path_env)
         .current_dir(cwd)
         .args(&args)
@@ -1605,7 +1685,7 @@ fn export_latex(path: String, bib_file: String) -> Result<String, String> {
     
     let mut logs = format!("Command: pandoc {}\n\n", args.join(" "));
     
-    let output = Command::new("pandoc")
+    let output = Command::new(tool_command("pandoc"))
         .env("PATH", &path_env)
         .current_dir(cwd)
         .args(&args)
@@ -2284,7 +2364,7 @@ end
     let mut content_opt: Option<String> = None;
 
     if is_tex {
-        let lp_out = Command::new("latexpand")
+        let lp_out = Command::new(tool_command("latexpand"))
             .env("PATH", &path_env)
             .current_dir(cwd)
             .arg(&path)
@@ -2391,7 +2471,7 @@ end
     
     let mut logs = format!("Command: pandoc {}\n\n", args.join(" "));
     
-    let output = Command::new("pandoc")
+    let output = Command::new(tool_command("pandoc"))
         .env("PATH", &path_env)
         .current_dir(cwd)
         .args(&args)
@@ -2494,22 +2574,17 @@ struct DependencyStatus {
 }
 
 fn is_command_available(cmd: &str) -> bool {
-    let path_env = get_env_path();
-    for path_dir in path_env.split(':') {
-        let p = std::path::Path::new(path_dir).join(cmd);
-        if p.exists() && p.is_file() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::MetadataExt;
-                if let Ok(meta) = p.metadata() {
-                    if meta.mode() & 0o111 != 0 {
-                        return true;
-                    }
-                }
-            }
-            #[cfg(not(unix))]
-            return true;
+    if let Some(path) = find_command(cmd) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            return path
+                .metadata()
+                .map(|meta| meta.mode() & 0o111 != 0)
+                .unwrap_or(false);
         }
+        #[cfg(not(unix))]
+        return true;
     }
     false
 }
@@ -2545,13 +2620,9 @@ fn clean_aux_files(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn open_file(path: String) -> Result<(), String> {
-    let path_env = get_env_path();
-    Command::new("open")
-        .env("PATH", &path_env)
-        .arg(path)
-        .spawn()
-        .map(|_| ())
+fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    app.opener()
+        .open_path(path, None::<&str>)
         .map_err(|e| e.to_string())
 }
 

@@ -43,11 +43,20 @@ If macOS blocks the first launch:
 
 This creates an exception for the app on that Mac. See [Apple's guidance for opening an app from an unknown developer](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
 
+### Windows and Linux
+
+Windows and Linux packages are built automatically for tagged releases and verified in clean virtual machines before publication:
+
+- **Windows 10/11 x64:** NSIS `setup.exe` installer. The initial builds are not code-signed, so Microsoft SmartScreen may show an unknown-publisher warning.
+- **Linux x86_64:** AppImage and Debian (`.deb`) packages, tested on Ubuntu 22.04 or newer.
+
+See the [cross-platform release and VM acceptance process](docs/CROSS_PLATFORM_RELEASE.md) for the complete development chain.
+
 ### Requirements
 The app integrates with standard command-line scientific tools if available:
 - **Pandoc** (for document conversion and MathML generation)
 - **LaTeX Engine** (LuaLaTeX, XeLaTeX, or PDFLaTeX via MacTeX / TeX Live)
-- **CSpell** (bundled with multi-language dictionaries)
+- **Node.js and CSpell** (language dictionaries are bundled; the CSpell executable is currently a system dependency)
 
 ---
 

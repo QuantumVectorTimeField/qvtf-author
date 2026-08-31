@@ -24,7 +24,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "app"],
+    "targets": "all",
     "copyright": "Copyright © 2026 Simeon Peter Marriott • QVTF.org",
     "resources": {
       "../node_modules/@cspell/": "node_modules/@cspell"
