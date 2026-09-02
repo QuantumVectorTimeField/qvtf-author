@@ -1,7 +1,7 @@
 # QVTF Author — Scientific Markdown & LaTeX Publisher
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Release](https://img.shields.io/badge/Release-v1.0.0-green.svg)](https://github.com/QuantumVectorTimeField/qvtf-author/releases)
+[![Release](https://img.shields.io/badge/Release-v1.1.0-green.svg)](https://github.com/QuantumVectorTimeField/qvtf-author/releases)
 [![QVTF Ecosystem](https://img.shields.io/badge/QVTF-qvtf.org-purple.svg)](https://qvtf.org)
 [![GitHub Org](https://img.shields.io/badge/GitHub-QuantumVectorTimeField-blue.svg)](https://github.com/QuantumVectorTimeField)
 
@@ -30,7 +30,7 @@
 
 ### macOS
 Download the latest release from the [Releases](https://github.com/QuantumVectorTimeField/qvtf-author/releases) page:
-1. Download `QVTF_Author_v1.0.0_macOS_arm64.zip` for an Apple Silicon Mac.
+1. Download the latest macOS Apple Silicon package.
 2. Unzip and drag `QVTF Author.app` into your `/Applications` folder.
 
 > [!IMPORTANT]
