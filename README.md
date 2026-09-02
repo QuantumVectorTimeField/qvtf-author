@@ -1,7 +1,7 @@
 # QVTF Author — Scientific Markdown & LaTeX Publisher
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Release](https://img.shields.io/badge/Release-v1.1.0-green.svg)](https://github.com/QuantumVectorTimeField/qvtf-author/releases)
+[![Release](https://img.shields.io/badge/Release-v1.1.1-green.svg)](https://github.com/QuantumVectorTimeField/qvtf-author/releases)
 [![QVTF Ecosystem](https://img.shields.io/badge/QVTF-qvtf.org-purple.svg)](https://qvtf.org)
 [![GitHub Org](https://img.shields.io/badge/GitHub-QuantumVectorTimeField-blue.svg)](https://github.com/QuantumVectorTimeField)
 
