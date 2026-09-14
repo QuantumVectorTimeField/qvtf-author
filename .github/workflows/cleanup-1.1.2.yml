@@ -1,0 +1,134 @@
+name: QVTF Author 1.1.2 cleanup validation
+
+on:
+  push:
+    branches: [qvtf-author-1.1.2-cleanup]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: ${{ !contains(github.event.head_commit.message, '[cleanup-applied]') }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply approved cleanup patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src-tauri/src/lib.rs')
+          text = path.read_text(encoding='utf-8')
+          original = text
+
+          # Windows child-process support.
+          anchor = 'use tauri_plugin_opener::OpenerExt;\n'
+          addition = '''use tauri_plugin_opener::OpenerExt;\n\n#[cfg(target_os = "windows")]\nuse std::os::windows::process::CommandExt;\n'''
+          assert text.count(anchor) == 1
+          text = text.replace(anchor, addition, 1)
+
+          # MiKTeX discovery: retain x64 and add ARM64 plus the unsuffixed bin.
+          old_pf = '            paths.push(root.join("MiKTeX").join("miktex").join("bin").join("x64"));'
+          new_pf = '''            let miktex_bin = root.join("MiKTeX").join("miktex").join("bin");\n            paths.push(miktex_bin.join("x64"));\n            paths.push(miktex_bin.join("arm64"));\n            paths.push(miktex_bin);'''
+          assert text.count(old_pf) == 1
+          text = text.replace(old_pf, new_pf, 1)
+
+          old_la = '            paths.push(root.join("Programs").join("MiKTeX").join("miktex").join("bin").join("x64"));'
+          new_la = '''            let miktex_bin = root\n                .join("Programs")\n                .join("MiKTeX")\n                .join("miktex")\n                .join("bin");\n            paths.push(miktex_bin.join("x64"));\n            paths.push(miktex_bin.join("arm64"));\n            paths.push(miktex_bin);'''
+          assert text.count(old_la) == 1
+          text = text.replace(old_la, new_la, 1)
+
+          # Route every existing external helper through the Windows-aware wrapper.
+          replacements = {
+              'Command::new("osascript")': ('external_command("osascript")', 1),
+              'Command::new(tool_command("cspell"))': ('external_command(tool_command("cspell"))', 2),
+              'Command::new(tool_command("pandoc"))': ('external_command(tool_command("pandoc"))', 5),
+              'Command::new(tool_command(&engine))': ('external_command(tool_command(&engine))', 1),
+              'Command::new(tool_command("latexpand"))': ('external_command(tool_command("latexpand"))', 1),
+          }
+          for old, (new, expected) in replacements.items():
+              actual = text.count(old)
+              assert actual == expected, f'{old}: expected {expected}, found {actual}'
+              text = text.replace(old, new)
+
+          helper_anchor = '''fn tool_command(cmd: &str) -> PathBuf {\n    find_command(cmd).unwrap_or_else(|| PathBuf::from(cmd))\n}\n'''
+          helper = helper_anchor + '''\n/// Create an external helper process without opening a console window on\n/// Windows. stdout/stderr/stdin behaviour remains under the caller's control.\nfn external_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {\n    let mut command = Command::new(program);\n\n    #[cfg(target_os = "windows")]\n    {\n        const CREATE_NO_WINDOW: u32 = 0x0800_0000;\n        command.creation_flags(CREATE_NO_WINDOW);\n    }\n\n    command\n}\n'''
+          assert text.count(helper_anchor) == 1
+          text = text.replace(helper_anchor, helper, 1)
+
+          # Correct malformed / inconsistent British-English mappings.
+          mapping_fixes = {
+              '"diagonalization: diagonalization", "diagonalizations: diagonalizations"': '"diagonalization: diagonalisation", "diagonalizations: diagonalisations"',
+              '"harmonization: harmonisation", "harmonizations: harmonizations"': '"harmonization: harmonisation", "harmonizations: harmonisations"',
+              '"standardization: standardisation", "standardizations: standardizations"': '"standardization: standardisation", "standardizations: standardisations"',
+              '"prioritization: prioritisation", "prioritizations: prioritisation"': '"prioritization: prioritisation", "prioritizations: prioritisations"',
+              '"localization: privatisation"': '"localization: localisation"',
+              '"quantization: privatisation"': '"quantization: quantisation"',
+              '"initialization: personalisation"': '"initialization: initialisation"',
+              '"optimization: privatisation"': '"optimization: optimisation"',
+              '"utilization: privatisation"': '"utilization: utilisation"',
+              '"conceptualization: privatisation"': '"conceptualization: conceptualisation"',
+              '"visualization: privatisation"': '"visualization: visualisation"',
+          }
+          for old, new in mapping_fixes.items():
+              assert old in text, f'missing mapping: {old}'
+              text = text.replace(old, new)
+
+          assert text != original
+          assert text.count('Command::new(') == 1, 'Only external_command itself should call Command::new'
+          path.write_text(text, encoding='utf-8')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patched-lib
+          path: src-tauri/src/lib.rs
+          if-no-files-found: error
+
+  test:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: patched-lib
+          path: src-tauri/src
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: npm ci
+      - run: node --check src/main.js
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  commit:
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qvtf-author-1.1.2-cleanup
+      - uses: actions/download-artifact@v4
+        with:
+          name: patched-lib
+          path: src-tauri/src
+      - name: Commit validated cleanup
+        run: |
+          rm -f .github/workflows/cleanup-1.1.2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: Windows helper processes and ARM64 MiKTeX cleanup [cleanup-applied]"
+          git push origin HEAD:qvtf-author-1.1.2-cleanup
