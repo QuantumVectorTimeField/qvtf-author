@@ -7,6 +7,9 @@ use regex::Regex;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 #[derive(Serialize, Deserialize)]
 struct SpellError {
     line: usize,
@@ -337,12 +340,22 @@ fn platform_tool_paths() -> Vec<PathBuf> {
         if let Some(program_files) = std::env::var_os("ProgramFiles") {
             let root = PathBuf::from(program_files);
             paths.push(root.join("Pandoc"));
-            paths.push(root.join("MiKTeX").join("miktex").join("bin").join("x64"));
+            let miktex_bin = root.join("MiKTeX").join("miktex").join("bin");
+            paths.push(miktex_bin.join("x64"));
+            paths.push(miktex_bin.join("arm64"));
+            paths.push(miktex_bin);
         }
         if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
             let root = PathBuf::from(local_app_data);
             paths.push(root.join("Pandoc"));
-            paths.push(root.join("Programs").join("MiKTeX").join("miktex").join("bin").join("x64"));
+            let miktex_bin = root
+                .join("Programs")
+                .join("MiKTeX")
+                .join("miktex")
+                .join("bin");
+            paths.push(miktex_bin.join("x64"));
+            paths.push(miktex_bin.join("arm64"));
+            paths.push(miktex_bin);
         }
         if let Some(app_data) = std::env::var_os("APPDATA") {
             paths.push(PathBuf::from(app_data).join("npm"));
@@ -386,6 +399,20 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
 
 fn tool_command(cmd: &str) -> PathBuf {
     find_command(cmd).unwrap_or_else(|| PathBuf::from(cmd))
+}
+
+/// Create an external helper process without opening a console window on
+/// Windows. stdout/stderr/stdin behaviour remains under the caller's control.
+fn external_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    let mut command = Command::new(program);
+
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    command
 }
 
 fn latex_to_unicode_html(latex: &str) -> Option<String> {
@@ -552,7 +579,7 @@ pb's setString:"{}" forType:(current application's NSPasteboardTypeHTML)
         html.replace('\\', "\\\\").replace('"', "\\\"")
     );
 
-    let mut child = Command::new("osascript")
+    let mut child = external_command("osascript")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -759,7 +786,7 @@ fn run_spell_check(
             "minimize: minimise", "minimizes: minimises", "minimizing: minimising", "minimized: minimised", "minimization: minimisation", "minimizations: minimisations",
             "synthesize: synthesise", "synthesizes: synthesises", "synthesizing: synthesising", "synthesized: synthesised", "synthesisation: synthesisation", "synthesisations: synthesisations",
             "stabilize: stabilise", "stabilizes: stabilises", "stabilizing: stabilising", "stabilized: stabilised", "stabilization: stabilisation", "stabilizations: stabilisations",
-            "diagonalize: diagonalise", "diagonalizes: diagonalises", "diagonalizing: diagonalising", "diagonalized: diagonalised", "diagonalization: diagonalization", "diagonalizations: diagonalizations",
+            "diagonalize: diagonalise", "diagonalizes: diagonalises", "diagonalizing: diagonalising", "diagonalized: diagonalised", "diagonalization: diagonalisation", "diagonalizations: diagonalisations",
             "polarize: polarise", "polarizes: polarises", "polarizing: polarising", "polarized: polarised", "polarization: polarisation", "polarizations: polarisations",
             "initialize: initialise", "initializes: initialises", "initializing: initialising", "initialized: initialised", "initialization: initialisation", "initializations: initialisations",
             "optimize: optimise", "optimizes: optimises", "optimizing: optimising", "optimized: optimised", "optimization: optimisation", "optimizations: optimisations",
@@ -767,14 +794,14 @@ fn run_spell_check(
             "utilize: utilise", "utilizes: utilises", "utilizing: utilising", "utilized: utilised", "utilization: utilisation", "utilizations: utilisations",
             "characterize: characterise", "characterizes: characterises", "characterizing: characterising", "characterized: characterised", "characterization: characterisation", "characterizations: characterisations",
             "conceptualize: conceptualise", "conceptualizes: conceptualises", "conceptualizing: conceptualising", "conceptualized: conceptualised", "conceptualization: conceptualisation", "conceptualizations: conceptualisations",
-            "harmonize: harmonise", "harmonizes: harmonises", "harmonizing: harmonising", "harmonized: harmonised", "harmonization: harmonisation", "harmonizations: harmonizations",
-            "standardize: standardise", "standardizes: standardises", "standardizing: standardising", "standardized: standardised", "standardization: standardisation", "standardizations: standardizations",
+            "harmonize: harmonise", "harmonizes: harmonises", "harmonizing: harmonising", "harmonized: harmonised", "harmonization: harmonisation", "harmonizations: harmonisations",
+            "standardize: standardise", "standardizes: standardises", "standardizing: standardising", "standardized: standardised", "standardization: standardisation", "standardizations: standardisations",
             "visualize: visualise", "visualizes: visualises", "visualizing: visualising", "visualized: visualised", "visualization: visualisation", "visualizations: visualisations",
             "labeling: labelling", "labelings: labellings", "labeled: labelled", "labeler: labeller",
             "summarize: summarise", "summarizes: summarises", "summarizing: summarising", "summarized: summarised", "summarization: summarisation", "summarizations: summarisations",
             "categorize: categorise", "categorizes: categorises", "categorizing: categorising", "categorized: categorised", "categorization: categorisation", "categorizations: categorisations",
             "emphasize: emphasise", "emphasizes: emphasises", "emphasizing: emphasising", "emphasized: emphasised", "emphasization: emphasisation", "emphasizations: emphasisations",
-            "prioritize: prioritise", "prioritizes: prioritises", "prioritizing: prioritising", "prioritized: prioritised", "prioritization: prioritisation", "prioritizations: prioritisation"
+            "prioritize: prioritise", "prioritizes: prioritises", "prioritizing: prioritising", "prioritized: prioritised", "prioritization: prioritisation", "prioritizations: prioritisations"
         ];
         flag_words = flag_words_slice.iter().map(|&s| serde_json::json!(s)).collect();
     }
@@ -839,7 +866,7 @@ fn run_spell_check(
     let config_content = serde_json::to_string_pretty(&config_json).map_err(|e| e.to_string())?;
     fs::write(&config_path, config_content).map_err(|e| e.to_string())?;
 
-    let mut child = Command::new(tool_command("cspell"))
+    let mut child = external_command(tool_command("cspell"))
         .env("PATH", &path_env)
         .args(&[
             "--config", &config_path.to_string_lossy(),
@@ -950,10 +977,10 @@ fn is_forbidden(word: &str) -> bool {
         "defense: defence", "offense: offence", "license: licence",
         "traveler: traveller", "travelers: travellers", "traveling: travelling", "traveled: travelled",
         "theater: theatre", "theaters: theatres",
-        "localize: localise", "localizes: localises", "localizing: localising", "localized: localised", "localization: privatisation", "localizations: localisations",
+        "localize: localise", "localizes: localises", "localizing: localising", "localized: localised", "localization: localisation", "localizations: localisations",
         "specialize: specialise", "specializes: specialises", "specializing: specialising", "specialized: specialised", "specialization: specialisation", "specializations: specialisations",
         "generalize: generalise", "generalizes: generalises", "generalizing: generalising", "generalized: generalised", "generalization: generalisation", "generalizations: generalisations",
-        "quantize: quantise", "quantizes: quantises", "quantizing: quantising", "quantized: quantised", "quantization: privatisation", "quantizations: quantisations",
+        "quantize: quantise", "quantizes: quantises", "quantizing: quantising", "quantized: quantised", "quantization: quantisation", "quantizations: quantisations",
         "systematize: systematise", "systematizes: systematises", "systematizing: systematising", "systematized: systematised", "systematization: systematisation", "systematizations: systematisations",
         "maximize: maximise", "maximizes: maximises", "maximizing: maximising", "maximized: maximised", "maximization: maximisation", "maximizations: maximisations",
         "minimize: minimise", "minimizes: minimises", "minimizing: minimising", "minimized: minimised", "minimization: minimisation", "minimizations: minimisations",
@@ -961,20 +988,20 @@ fn is_forbidden(word: &str) -> bool {
         "stabilize: stabilise", "stabilizes: stabilises", "stabilizing: stabilising", "stabilized: stabilised", "stabilization: stabilisation", "stabilizations: stabilisations",
         "diagonalize: diagonalise", "diagonalizes: diagonalises", "diagonalizing: diagonalising", "diagonalized: diagonalised", "diagonalization: diagonalisation", "diagonalizations: diagonalisations",
         "polarize: polarise", "polarizes: polarises", "polarizing: polarising", "polarized: polarised", "polarization: polarisation", "polarizations: polarisations",
-        "initialize: initialise", "initializes: initialises", "initializing: initialising", "initialized: initialised", "initialization: personalisation", "initializations: initialisations",
-        "optimize: optimise", "optimizes: optimises", "optimizing: optimising", "optimized: optimised", "optimization: privatisation", "optimizations: optimisations",
+        "initialize: initialise", "initializes: initialises", "initializing: initialising", "initialized: initialised", "initialization: initialisation", "initializations: initialisations",
+        "optimize: optimise", "optimizes: optimises", "optimizing: optimising", "optimized: optimised", "optimization: optimisation", "optimizations: optimisations",
         "normalize: normalise", "normalizes: normalises", "normalizing: normalising", "normalized: normalised", "normalization: normalisation", "normalizations: normalisations",
-        "utilize: utilise", "utilizes: utilises", "utilizing: utilising", "utilized: utilised", "utilization: privatisation", "utilizations: utilisations",
+        "utilize: utilise", "utilizes: utilises", "utilizing: utilising", "utilized: utilised", "utilization: utilisation", "utilizations: utilisations",
         "characterize: characterise", "characterizes: characterises", "characterizing: characterising", "characterized: characterised", "characterization: characterisation", "characterizations: characterisations",
-        "conceptualize: conceptualise", "conceptualizes: conceptualises", "conceptualizing: conceptualising", "conceptualized: conceptualised", "conceptualization: privatisation", "conceptualizations: conceptualisations",
-        "harmonize: harmonise", "harmonizes: harmonises", "harmonizing: harmonising", "harmonized: harmonised", "harmonization: harmonisation", "harmonizations: harmonizations",
-        "standardize: standardise", "standardizes: standardises", "standardizing: standardising", "standardized: standardised", "standardization: standardisation", "standardizations: standardizations",
-        "visualize: visualise", "visualizes: visualises", "visualizing: visualising", "visualized: visualised", "visualization: privatisation", "visualizations: visualisations",
+        "conceptualize: conceptualise", "conceptualizes: conceptualises", "conceptualizing: conceptualising", "conceptualized: conceptualised", "conceptualization: conceptualisation", "conceptualizations: conceptualisations",
+        "harmonize: harmonise", "harmonizes: harmonises", "harmonizing: harmonising", "harmonized: harmonised", "harmonization: harmonisation", "harmonizations: harmonisations",
+        "standardize: standardise", "standardizes: standardises", "standardizing: standardising", "standardized: standardised", "standardization: standardisation", "standardizations: standardisations",
+        "visualize: visualise", "visualizes: visualises", "visualizing: visualising", "visualized: visualised", "visualization: visualisation", "visualizations: visualisations",
         "labeling: labelling", "labelings: labellings", "labeled: labelled", "labeler: labeller",
         "summarize: summarise", "summarizes: summarises", "summarizing: summarising", "summarized: summarised", "summarization: summarisation", "summarizations: summarisations",
         "categorize: categorise", "categorizes: categorises", "categorizing: categorising", "categorized: categorised", "categorization: categorisation", "categorizations: categorisations",
         "emphasize: emphasise", "emphasizes: emphasises", "emphasizing: emphasising", "emphasized: emphasised", "emphasization: emphasisation", "emphasizations: emphasisations",
-        "prioritize: prioritise", "prioritizes: prioritises", "prioritizing: prioritising", "prioritized: prioritised", "prioritization: prioritisation", "prioritizations: prioritisation"
+        "prioritize: prioritise", "prioritizes: prioritises", "prioritizing: prioritising", "prioritized: prioritised", "prioritization: prioritisation", "prioritizations: prioritisations"
     ];
     for &fw in flag_words_slice {
         if fw.starts_with(&prefix) || fw == lower_w {
@@ -1004,7 +1031,7 @@ fn fetch_suggestions(app: tauri::AppHandle, word: String, language: Option<Strin
     args.push("15".to_string());
     args.push(word.clone());
 
-    let output = Command::new(tool_command("cspell"))
+    let output = external_command(tool_command("cspell"))
         .env("PATH", &path_env)
         .args(&args)
         .output();
@@ -1086,7 +1113,7 @@ fn add_to_dictionary(path: Option<String>, word: String) -> Result<(), String> {
 #[tauri::command]
 fn render_latex_preview(content: String, path: Option<String>) -> Result<String, String> {
     let path_env = get_env_path();
-    let mut command = Command::new(tool_command("pandoc"));
+    let mut command = external_command(tool_command("pandoc"));
     command
         .env("PATH", &path_env)
         .args(["--from=latex", "--to=html5", "--mathml"])
@@ -1152,7 +1179,7 @@ fn compile_pdf(
         let file_name = file_path.file_name().unwrap().to_str().unwrap();
         logs.push_str(&format!("Command: {} -interaction=nonstopmode -file-line-error {}\n\n", engine, file_name));
         
-        let output = Command::new(tool_command(&engine))
+        let output = external_command(tool_command(&engine))
             .env("PATH", &path_env)
             .current_dir(cwd)
             .args(&["-interaction=nonstopmode", "-file-line-error", file_name])
@@ -1327,7 +1354,7 @@ fn compile_pdf(
         
         logs.push_str(&format!("Command: pandoc {}\n\n", args.join(" ")));
         
-        let output = Command::new(tool_command("pandoc"))
+        let output = external_command(tool_command("pandoc"))
             .env("PATH", &path_env)
             .args(&args)
             .output()
@@ -1595,7 +1622,7 @@ fn export_html(
     
     logs.push_str(&format!("Command: pandoc {}\n\n", args.join(" ")));
     
-    let output = Command::new(tool_command("pandoc"))
+    let output = external_command(tool_command("pandoc"))
         .env("PATH", &path_env)
         .current_dir(cwd)
         .args(&args)
@@ -1685,7 +1712,7 @@ fn export_latex(path: String, bib_file: String) -> Result<String, String> {
     
     let mut logs = format!("Command: pandoc {}\n\n", args.join(" "));
     
-    let output = Command::new(tool_command("pandoc"))
+    let output = external_command(tool_command("pandoc"))
         .env("PATH", &path_env)
         .current_dir(cwd)
         .args(&args)
@@ -2364,7 +2391,7 @@ end
     let mut content_opt: Option<String> = None;
 
     if is_tex {
-        let lp_out = Command::new(tool_command("latexpand"))
+        let lp_out = external_command(tool_command("latexpand"))
             .env("PATH", &path_env)
             .current_dir(cwd)
             .arg(&path)
@@ -2471,7 +2498,7 @@ end
     
     let mut logs = format!("Command: pandoc {}\n\n", args.join(" "));
     
-    let output = Command::new(tool_command("pandoc"))
+    let output = external_command(tool_command("pandoc"))
         .env("PATH", &path_env)
         .current_dir(cwd)
         .args(&args)
