@@ -1,6 +1,7 @@
 name: Release Multi-Platform Desktop App
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -49,30 +50,79 @@ jobs:
       - name: Check frontend JavaScript
         run: node --check src/main.js
 
+      - name: Prepare Apple signing credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: bash .github/scripts/macos-release.sh setup
+
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_API_ISSUER: ${{ runner.os == 'macOS' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_API_KEY: ${{ runner.os == 'macOS' && secrets.APPLE_API_KEY || '' }}
         with:
-          tagName: ${{ github.ref_name }}
+          # macOS uploads only after verification; manual branch runs upload no release.
+          tagName: ${{ runner.os != 'macOS' && startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: 'QVTF Author ${{ github.ref_name }}'
           releaseBody: |
             Multi-platform QVTF Author release.
 
-            The macOS build is not Apple-notarized and the Windows build is not code-signed. Download only from the official QVTF Author repository and verify the published checksums.
+            macOS assets are uploaded only after Developer ID signing and Apple notarization checks pass. The Windows build is not code-signed. Download only from the official QVTF Author repository and verify the published checksums.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
+      - name: Verify macOS app and notarize DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: bash .github/scripts/macos-release.sh verify
+
+      - name: Save verified macOS assets
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-macos-release
+          path: ${{ runner.temp }}/verified-macos-release/*
+          if-no-files-found: error
+
+      - name: Remove Apple signing credentials
+        if: ${{ always() && runner.os == 'macOS' }}
+        shell: bash
+        run: bash .github/scripts/macos-release.sh cleanup
+
   checksums:
     name: Publish release checksums
     needs: release
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Download verified macOS assets
+        uses: actions/download-artifact@v4
+        with:
+          name: verified-macos-release
+          path: verified-macos-release
+
+      - name: Upload verified macOS assets to draft release
+        shell: bash
+        run: |
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          gh release upload "$GITHUB_REF_NAME" verified-macos-release/* --repo "$GITHUB_REPOSITORY" --clobber
+
       - name: Download draft release assets
         run: |
           mkdir release-assets
