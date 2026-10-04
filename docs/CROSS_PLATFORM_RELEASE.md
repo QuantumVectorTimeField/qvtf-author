@@ -42,6 +42,15 @@ The first Windows and Linux releases bundle QVTF Author and its language diction
 
 ## Signing policy
 
-- macOS packages are ad-hoc signed but not Apple-notarized.
+- Current macOS Apple Silicon packages are Developer ID signed, Apple-notarized, stapled, and verified by Gatekeeper before distribution.
 - Windows packages are initially unsigned and may trigger SmartScreen.
 - All release assets should have SHA-256 checksums published alongside them.
+
+## v1.1.2 release candidate status
+
+The signing workflow was merged into `main` on 25 September 2026. The successful manual build at https://github.com/QuantumVectorTimeField/qvtf-author/actions/runs/36164967255 produced verified macOS packages; the maintainer installed the macOS build and reported it working. Windows and Linux builds also passed, but installation and export acceptance tests remain pending.
+
+The dedicated `Refresh v1.1.2 draft with verified macOS packages` workflow promotes the exact verified macOS artifact into the existing v1.1.2 draft, preserves a backup, regenerates checksums, and updates release notes. It checks the source run and package hashes, preserves the existing Windows/Linux packages byte for byte, and refuses to modify a published release. Confirm that this workflow succeeds before using the draft for acceptance testing.
+
+The draft stays unpublished until the Windows and Linux checklists above are completed. Manual runs of the general release workflow on a branch only retain macOS artifacts; they do not replace draft assets or retain Windows/Linux installers. Tag-triggered runs create draft releases and generate checksums after all platforms succeed.
+
