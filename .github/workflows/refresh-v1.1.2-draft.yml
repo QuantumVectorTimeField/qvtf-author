@@ -1,0 +1,37 @@
+name: Refresh v1.1.2 draft with verified macOS packages
+
+on:
+  push:
+    branches: [codex/refresh-v1.1.2-draft]
+    paths:
+      - .github/workflows/refresh-v1.1.2-draft.yml
+      - .github/scripts/refresh-v1.1.2-draft.py
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-v1.1.2-draft
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare packages and validate provenance
+        run: python3 .github/scripts/refresh-v1.1.2-draft.py prepare
+      - name: Preserve original draft assets before replacement
+        uses: actions/upload-artifact@v7
+        with:
+          name: v1.1.2-draft-before-refresh
+          path: draft-refresh/backup/*
+          if-no-files-found: error
+      - name: Update draft assets and checksums
+        run: python3 .github/scripts/refresh-v1.1.2-draft.py apply
+      - name: Record draft status
+        run: |
+          echo 'v1.1.2 draft updated with the exact tested macOS packages. Windows/Linux acceptance tests remain pending. No release published.' >> "$GITHUB_STEP_SUMMARY"
