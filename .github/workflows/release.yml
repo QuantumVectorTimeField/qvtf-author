@@ -80,6 +80,26 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+      - name: Save Windows x64 test installer
+        if: github.event_name == 'workflow_dispatch' && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qvtf-author-windows-x64-test
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Save Linux x86_64 test packages
+        if: github.event_name == 'workflow_dispatch' && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qvtf-author-linux-x86_64-test
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Verify macOS app and notarize DMG
         if: runner.os == 'macOS'
         shell: bash
